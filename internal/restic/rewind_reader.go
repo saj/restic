@@ -3,6 +3,7 @@ package restic
 import (
 	"bytes"
 	"io"
+	"os"
 
 	"github.com/restic/restic/internal/errors"
 )
@@ -10,6 +11,8 @@ import (
 // RewindReader allows resetting the Reader to the beginning of the data.
 type RewindReader interface {
 	io.Reader
+	io.ReaderAt
+	io.Seeker
 
 	// Rewind rewinds the reader so the same data can be read again from the
 	// start.
@@ -54,13 +57,13 @@ var _ RewindReader = &FileReader{}
 
 // FileReader implements a RewindReader for an open file.
 type FileReader struct {
-	io.ReadSeeker
+	*os.File
 	Len int64
 }
 
 // Rewind seeks to the beginning of the file.
 func (f *FileReader) Rewind() error {
-	_, err := f.ReadSeeker.Seek(0, io.SeekStart)
+	_, err := f.File.Seek(0, io.SeekStart)
 	return errors.Wrap(err, "Seek")
 }
 
@@ -70,15 +73,15 @@ func (f *FileReader) Length() int64 {
 }
 
 // NewFileReader wraps f in a *FileReader.
-func NewFileReader(f io.ReadSeeker) (*FileReader, error) {
+func NewFileReader(f *os.File) (*FileReader, error) {
 	pos, err := f.Seek(0, io.SeekEnd)
 	if err != nil {
 		return nil, errors.Wrap(err, "Seek")
 	}
 
 	fr := &FileReader{
-		ReadSeeker: f,
-		Len:        pos,
+		File: f,
+		Len:  pos,
 	}
 
 	err = fr.Rewind()
