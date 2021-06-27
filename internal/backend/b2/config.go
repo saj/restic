@@ -18,6 +18,7 @@ type Config struct {
 	Prefix    string
 
 	Connections uint `option:"connections" help:"set a limit for the number of concurrent connections (default: 5)"`
+	ChunkSize   uint `option:"chunk-size" help:"chunk size in bytes (default: 100 MB, where 1 MB = 1,000 KB)"`
 }
 
 // NewConfig returns a new config with default options applied.

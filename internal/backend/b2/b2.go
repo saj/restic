@@ -200,16 +200,27 @@ func (be *b2Backend) Save(ctx context.Context, h restic.Handle, rd restic.Rewind
 	debug.Log("Save %v, name %v", h, name)
 	obj := be.bucket.Object(name)
 
-	w := obj.NewWriter(ctx, func(w *b2.Writer) {
-		n := int(be.cfg.Connections)
-		if n < 0 {
-			n = 1
-		}
-		if n > 32 { // entirely arbitrary
-			n = 32
-		}
-		w.ConcurrentUploads = n
-	})
+	w := obj.NewWriter(ctx,
+		func(w *b2.Writer) {
+			n := int(be.cfg.Connections)
+			if n < 0 {
+				n = 1
+			}
+			if n > 32 { // entirely arbitrary
+				n = 32
+			}
+			w.ConcurrentUploads = n
+		},
+		func(w *b2.Writer) {
+			cs := int(be.cfg.ChunkSize)
+			if cs < 5e6 {
+				cs = 0
+			}
+			if cs > 5e9 {
+				cs = 5e9
+			}
+			w.ChunkSize = cs
+		})
 	n, err := io.Copy(w, rd)
 	debug.Log("  saved %d bytes, err %v", n, err)
 
