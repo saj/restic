@@ -170,7 +170,7 @@ func (be *b2Backend) openReader(ctx context.Context, h restic.Handle, length int
 	obj := be.bucket.Object(name)
 
 	if offset == 0 && length == 0 {
-		rd := obj.NewReader(ctx)
+		rd := be.configureB2Reader(obj.NewReader(ctx))
 		return be.sem.ReleaseTokenOnClose(rd, cancel), nil
 	}
 
@@ -180,7 +180,7 @@ func (be *b2Backend) openReader(ctx context.Context, h restic.Handle, length int
 		length = -1
 	}
 
-	rd := obj.NewRangeReader(ctx, offset, int64(length))
+	rd := be.configureB2Reader(obj.NewRangeReader(ctx, offset, int64(length)))
 	return be.sem.ReleaseTokenOnClose(rd, cancel), nil
 }
 
@@ -200,27 +200,7 @@ func (be *b2Backend) Save(ctx context.Context, h restic.Handle, rd restic.Rewind
 	debug.Log("Save %v, name %v", h, name)
 	obj := be.bucket.Object(name)
 
-	w := obj.NewWriter(ctx,
-		func(w *b2.Writer) {
-			n := int(be.cfg.Connections)
-			if n < 0 {
-				n = 1
-			}
-			if n > 32 { // entirely arbitrary
-				n = 32
-			}
-			w.ConcurrentUploads = n
-		},
-		func(w *b2.Writer) {
-			cs := int(be.cfg.ChunkSize)
-			if cs < 5e6 {
-				cs = 0
-			}
-			if cs > 5e9 {
-				cs = 5e9
-			}
-			w.ChunkSize = cs
-		})
+	w := be.configureB2Writer(obj.NewWriter(ctx))
 	n, err := io.Copy(w, rd)
 	debug.Log("  saved %d bytes, err %v", n, err)
 
@@ -234,6 +214,47 @@ func (be *b2Backend) Save(ctx context.Context, h restic.Handle, rd restic.Rewind
 		return errors.Errorf("wrote %d bytes instead of the expected %d bytes", n, rd.Length())
 	}
 	return errors.Wrap(w.Close(), "Close")
+}
+
+func (be *b2Backend) configureB2Reader(r *b2.Reader) *b2.Reader {
+	nconns := int(be.cfg.Connections)
+	if nconns < 0 {
+		nconns = 1
+	}
+	if nconns > 32 { // entirely arbitrary
+		nconns = 32
+	}
+	r.ConcurrentDownloads = nconns
+
+	csize := int(be.cfg.ChunkSize)
+	if csize > 5e9 {
+		csize = 5e9
+	}
+	r.ChunkSize = csize
+
+	return r
+}
+
+func (be *b2Backend) configureB2Writer(w *b2.Writer) *b2.Writer {
+	nconns := int(be.cfg.Connections)
+	if nconns < 0 {
+		nconns = 1
+	}
+	if nconns > 32 { // entirely arbitrary
+		nconns = 32
+	}
+	w.ConcurrentUploads = nconns
+
+	csize := int(be.cfg.ChunkSize)
+	if csize < 5e6 {
+		csize = 0
+	}
+	if csize > 5e9 {
+		csize = 5e9
+	}
+	w.ChunkSize = csize
+
+	return w
 }
 
 // Stat returns information about a blob.
